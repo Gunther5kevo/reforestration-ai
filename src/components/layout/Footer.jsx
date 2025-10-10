@@ -66,11 +66,11 @@ const Footer = () => {
           <div className="space-y-4">
             <h3 className="text-lg font-bold">Powered By</h3>
             <ul className="space-y-2 text-sm opacity-90">
-              <li>🌤️ Open-Meteo API</li>
-              <li>🗺️ OpenStreetMap</li>
-              <li>🌿 GBIF Database</li>
-              <li>🤖 OpenAI GPT-4</li>
-              <li>📊 Trefle Plant API</li>
+              <li> Open-Meteo API</li>
+              <li> OpenStreetMap</li>
+              <li> GBIF Database</li>
+              <li> OpenAI GPT-4</li>
+              <li> Trefle Plant API</li>
             </ul>
             
             {/* Social Links */}
@@ -78,17 +78,17 @@ const Footer = () => {
               <h4 className="text-sm font-semibold mb-3">Connect</h4>
               <div className="flex space-x-4">
                 <SocialLink 
-                  href="https://github.com/yourusername/reforest-ai"
+                  href="https://github.com/Gunther5kevo/reforestration-ai"
                   icon={Github}
                   label="GitHub"
                 />
                 <SocialLink 
-                  href="mailto:contact@reforest.ai"
+                  href="mailto:kipyegokevin82@gmail.com"
                   icon={Mail}
                   label="Email"
                 />
                 <SocialLink 
-                  href="https://twitter.com/reforestai"
+                  href="https://twitter.com/kevodaktari"
                   icon={Twitter}
                   label="Twitter"
                 />
@@ -125,7 +125,7 @@ const Footer = () => {
                 Terms
               </button>
               <a
-                href="https://github.com/yourusername/reforest-ai/blob/main/LICENSE"
+                href="https://github.com/Gunther5kevo/reforestration-ai"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="opacity-75 hover:opacity-100 transition-opacity"
