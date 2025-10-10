@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Local environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Cache
+.cache/
+vite-cache/
+.eslintcache
+
+# Test and coverage
+coverage/
+*.lcov
+
+# Optional: local data or uploads
+uploads/
+public/temp/
+*.bak
+
+# If using TypeScript
+*.tsbuildinfo
+
+# If using storybook
+storybook-static/
+
+# If deploying to Netlify or Render, ignore local config
+.netlify/
+.render/
