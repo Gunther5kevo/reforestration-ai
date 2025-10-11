@@ -29,7 +29,8 @@ export const CONFIG = {
   MIN_COMPATIBILITY_SCORE: Number(import.meta.env.VITE_MIN_COMPATIBILITY_SCORE),
   USE_LOCAL_DATABASE: import.meta.env.VITE_USE_LOCAL_DATABASE === 'true',
   ENABLE_API_ENRICHMENT: import.meta.env.VITE_ENABLE_API_ENRICHMENT === 'true',
-  USE_OPENAI_ENHANCEMENT: import.meta.env.VITE_USE_OPENAI_ENHANCEMENT === 'true'
+  USE_OPENAI_ENHANCEMENT: import.meta.env.VITE_USE_OPENAI_ENHANCEMENT === 'true',
+  ENABLE_MANUAL_LOCATION: true,
 };
 
 export default CONFIG;

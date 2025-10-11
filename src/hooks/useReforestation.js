@@ -1,12 +1,14 @@
 /**
- * OPTIMIZED useReforestation Hook
- * - Parallel processing for faster results
+ * useReforestation Hook - Fixed & Optimized
+ * 
+ * Key fixes:
+ * - No recursive calls in setManualLocation
+ * - Proper workflow continuation after manual location
+ * - Optimized parallel processing
  * - Better error handling
- * - Smoother loading states
- * - No localStorage (Claude artifacts compatible)
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import imageService from '../services/imageService';
 import climateService from '../services/climateService';
 import locationService from '../services/locationService';
@@ -15,6 +17,19 @@ import openAIService from '../services/openAIService';
 
 const useReforestation = () => {
   const isMounted = useRef(true);
+  const isInitialized = useRef(false);
+
+  // Cleanup on unmount - ONLY on actual unmount
+  useEffect(() => {
+    isMounted.current = true;
+    isInitialized.current = true;
+    console.log('🔧 useReforestation mounted');
+    
+    return () => {
+      console.log('🧹 useReforestation unmounting');
+      isMounted.current = false;
+    };
+  }, []);
 
   const [state, setState] = useState({
     currentStep: 'upload',
@@ -35,13 +50,19 @@ const useReforestation = () => {
     loadingMessage: '',
     error: null,
     useAI: true,
-    openAIKey: ''
+    openAIKey: '',
+    needsManualLocation: false,
+    usingFallbackLocation: false
   });
 
   const updateState = useCallback((updates) => {
-    if (isMounted.current) {
-      setState(prev => ({ ...prev, ...updates }));
+    // In development, React StrictMode may cause false unmounts
+    // So we update state anyway, but log warnings
+    if (!isMounted.current) {
+      console.warn('⚠️ Attempting state update after unmount (might be StrictMode)');
     }
+    
+    setState(prev => ({ ...prev, ...updates }));
   }, []);
 
   const setOpenAIKey = useCallback((apiKey) => {
@@ -50,53 +71,212 @@ const useReforestation = () => {
   }, [updateState]);
 
   /**
-   * OPTIMIZED: Parallel image upload processing
-   * Processes multiple steps simultaneously for faster results
+   * Calculate suitability score
    */
-  const handleImageUpload = useCallback(async (file) => {
-    if (!file) {
-      updateState({
-        imageFile: null,
-        imagePreview: null,
-        currentStep: 'upload',
-        error: null
+  const calculateSuitability = useCallback((climateAnalysis, imageAnalysis) => {
+    let score = 70;
+    const warnings = [];
+    const recommendations = [];
+
+    // Temperature check
+    const avgTemp = climateAnalysis?.temperatureStats?.average || 20;
+    if (avgTemp < 10) {
+      score -= 15;
+      warnings.push({
+        type: 'cold-climate',
+        severity: 'medium',
+        message: 'Cold climate may limit tree species options'
       });
-      return;
+      recommendations.push('Focus on cold-hardy species');
+    } else if (avgTemp > 30) {
+      score -= 10;
+      warnings.push({
+        type: 'hot-climate',
+        severity: 'medium',
+        message: 'Hot climate requires drought-resistant species'
+      });
+      recommendations.push('Choose heat and drought tolerant trees');
+    } else {
+      score += 10;
     }
 
-    // Validate file first (fast)
-    const validation = imageService.validateImageFile(file);
-    if (!validation.valid) {
-      updateState({ error: validation.error });
-      return;
+    // Rainfall check
+    const rainfall = climateAnalysis?.annualRainfall || 1000;
+    if (rainfall < 500) {
+      score -= 20;
+      warnings.push({
+        type: 'low-rainfall',
+        severity: 'high',
+        message: 'Low rainfall area - irrigation may be necessary'
+      });
+      recommendations.push('Plan for regular irrigation');
+    } else if (rainfall > 2000) {
+      score -= 5;
+      warnings.push({
+        type: 'high-rainfall',
+        severity: 'low',
+        message: 'High rainfall - ensure good drainage'
+      });
+    } else {
+      score += 15;
     }
+
+    // Soil check
+    const vegLevel = imageAnalysis?.vegetationLevel || 'moderate';
+    if (vegLevel === 'bare') {
+      score += 10;
+      recommendations.push('Bare land is ideal for new plantings');
+    } else if (vegLevel === 'dense') {
+      score -= 10;
+      warnings.push({
+        type: 'dense-vegetation',
+        severity: 'medium',
+        message: 'Dense existing vegetation may require clearing'
+      });
+    }
+
+    const finalScore = Math.max(0, Math.min(100, score));
+    let level;
+    if (finalScore >= 80) level = 'excellent';
+    else if (finalScore >= 65) level = 'good';
+    else if (finalScore >= 50) level = 'moderate';
+    else level = 'challenging';
+
+    return {
+      suitabilityScore: finalScore,
+      suitabilityLevel: level,
+      warnings,
+      recommendations
+    };
+  }, []);
+
+  /**
+   * Get hardy fallback species
+   */
+  const getHardyFallbackSpecies = useCallback(async () => {
+    try {
+      const { default: TREE_DATABASE } = await import('../constants/treeDatabase');
+      
+      return TREE_DATABASE
+        .filter(tree => 
+          tree.hardiness === 'high' || 
+          tree.waterNeeds === 'low' ||
+          tree.adaptability === 'high'
+        )
+        .slice(0, 5)
+        .map(tree => ({
+          ...tree,
+          compatibilityScore: 60,
+          finalScore: 60,
+          fallbackSpecies: true
+        }));
+    } catch (error) {
+      console.error('Failed to load fallback species:', error);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Generate recommendations with fallback strategies
+   */
+  const generateRecommendationsWithFallback = useCallback(async (params) => {
+    const { location, climateData, imageAnalysis, useAI, usingFallbackLocation, manualLocation } = params;
 
     try {
-      updateState({
-        isLoading: true,
-        loadingMessage: 'Processing image...',
-        error: null,
-        currentStep: 'processing',
-        imageFile: file
+      // Try 1: Standard recommendation
+      console.log('🔍 Attempting standard recommendations...');
+      let result = await recommendationService.generateRecommendations({
+        location,
+        climateData,
+        imageAnalysis,
+        useAI,
+        manualLocation
       });
 
-      // ⚡ PARALLEL STEP 1: GPS + Preview (can happen simultaneously)
-      console.log('⚡ Step 1/5: Extracting GPS & creating preview...');
-      const [gpsData, preview] = await Promise.all([
-        imageService.extractGPSFromImage(file),
-        imageService.createImagePreview(file)
-      ]);
+      if (result.success && result.recommendations?.length > 0) {
+        console.log(`✅ Found ${result.recommendations.length} trees (standard)`);
+        return result;
+      }
 
-      if (!isMounted.current) return;
+      // Try 2: Relaxed criteria
+      if (usingFallbackLocation || manualLocation) {
+        console.warn('⚠️ No trees with standard criteria, trying relaxed mode...');
+        
+        result = await recommendationService.generateRecommendations({
+          location,
+          climateData,
+          imageAnalysis,
+          useAI,
+          manualLocation,
+          relaxed: true,
+          toleranceBuffer: 5
+        });
+
+        if (result.success && result.recommendations?.length > 0) {
+          console.log(`✅ Found ${result.recommendations.length} trees (relaxed)`);
+          return {
+            ...result,
+            fallbackMode: true,
+            warning: 'Using approximate location. Enable GPS for more accurate results.'
+          };
+        }
+      }
+
+      // Try 3: Hardy species fallback
+      console.warn('⚠️ Using hardy species fallback...');
+      const hardySpecies = await getHardyFallbackSpecies();
+      
+      return {
+        success: true,
+        recommendations: hardySpecies,
+        fallbackMode: true,
+        warning: 'Showing general hardy species. Set exact location for better recommendations.',
+        plantingStrategy: {
+          density: '300-400 trees/hectare',
+          bestMonths: ['March', 'April', 'May', 'October', 'November'],
+          spacing: '3-4 meters',
+          mixRatio: {},
+          source: 'fallback'
+        },
+        impactMetrics: {
+          carbonSequestration: { year1: 150, year10: 1425, perTree: 5, unit: 'kg CO2' },
+          biodiversity: { score: 70, level: 'good' },
+          density: { treesPerHectare: 350, survivalRate: 90 },
+          economicValue: { carbonCredits: 14250, timber: 17500, total: 31750, currency: 'USD' },
+          ecosystem: { soilImprovement: 'moderate', waterRetention: 'moderate', habitatCreation: 'good' }
+        }
+      };
+    } catch (error) {
+      console.error('Failed to generate recommendations:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to generate recommendations'
+      };
+    }
+  }, [getHardyFallbackSpecies]);
+
+  /**
+   * Main processing function - handles both GPS and manual location
+   */
+  const processWithLocation = useCallback(async (file, preview, gpsData, isManual = false) => {
+    try {
+      console.log(`🚀 Processing with ${isManual ? 'manual' : 'GPS'} location:`, {
+        lat: gpsData.latitude?.toFixed(4),
+        lon: gpsData.longitude?.toFixed(4)
+      });
 
       updateState({
         gpsData,
         imagePreview: preview,
-        loadingMessage: 'Analyzing location and image...'
+        usingFallbackLocation: isManual,
+        loadingMessage: 'Analyzing location and image...',
+        isLoading: true,
+        currentStep: 'analyzing',
+        needsManualLocation: false
       });
 
-      // ⚡ PARALLEL STEP 2: Location lookup + Image analysis (independent operations)
-      console.log('⚡ Step 2/5: Getting location & analyzing image...');
+      // ⚡ PARALLEL: Location + Image analysis
+      console.log('⚡ Step 1: Getting location & analyzing image...');
       const [locationData, imageAnalysis] = await Promise.all([
         locationService.reverseGeocode(gpsData.latitude, gpsData.longitude),
         imageService.analyzeImageBasic(file)
@@ -104,15 +284,16 @@ const useReforestation = () => {
 
       if (!isMounted.current) return;
 
+      console.log('✅ Location & analysis complete');
+
       updateState({
         locationData,
         imageAnalysis,
-        loadingMessage: 'Fetching climate data...',
-        currentStep: 'analyzing'
+        loadingMessage: 'Fetching climate data...'
       });
 
-      // STEP 3: Climate data (depends on location)
-      console.log('⚡ Step 3/5: Fetching climate data...');
+      // Step 2: Climate data
+      console.log('⚡ Step 2: Fetching climate data...');
       const climateData = await climateService.fetchClimateWithRetry(
         gpsData.latitude,
         gpsData.longitude
@@ -120,11 +301,10 @@ const useReforestation = () => {
 
       if (!isMounted.current) return;
 
-      // Quick local analysis (no API call)
       const climateAnalysis = climateService.analyzeClimate(climateData);
-      
-      // Calculate suitability score
       const suitability = calculateSuitability(climateAnalysis, imageAnalysis);
+
+      console.log('✅ Climate data complete');
 
       updateState({
         climateData,
@@ -133,13 +313,15 @@ const useReforestation = () => {
         loadingMessage: 'Generating tree recommendations...'
       });
 
-      // STEP 4: Generate recommendations
-      console.log('⚡ Step 4/5: Generating recommendations...');
-      const recommendationResult = await recommendationService.generateRecommendations({
+      // Step 3: Generate recommendations
+      console.log('⚡ Step 3: Generating recommendations...');
+      const recommendationResult = await generateRecommendationsWithFallback({
         location: locationData,
         climateData: { ...climateData, ...climateAnalysis },
         imageAnalysis,
-        useAI: state.useAI && openAIService.isOpenAIConfigured()
+        useAI: state.useAI && openAIService.isOpenAIConfigured(),
+        usingFallbackLocation: isManual,
+        manualLocation: isManual
       });
 
       if (!isMounted.current) return;
@@ -148,12 +330,12 @@ const useReforestation = () => {
         throw new Error(recommendationResult.error || 'Failed to generate recommendations');
       }
 
-      if (!recommendationResult.recommendations || recommendationResult.recommendations.length === 0) {
-        throw new Error('No suitable trees found for your location conditions. Try a different location.');
+      if (!recommendationResult.recommendations?.length) {
+        throw new Error('No suitable trees found for this location');
       }
 
-      // STEP 5: Complete!
-      console.log('✅ Step 5/5: Analysis complete!');
+      // Step 4: Complete!
+      console.log(`✅ Analysis complete! Found ${recommendationResult.recommendations.length} trees`);
       updateState({
         recommendations: recommendationResult.recommendations,
         selectedTree: recommendationResult.recommendations[0],
@@ -171,101 +353,137 @@ const useReforestation = () => {
       if (!isMounted.current) return;
 
       updateState({
-        error: error.message || 'An error occurred while processing the image',
+        error: error.message || 'Processing failed',
+        isLoading: false,
+        loadingMessage: '',
+        currentStep: 'processing'
+      });
+    }
+  }, [state.useAI, updateState, calculateSuitability, generateRecommendationsWithFallback]);
+
+  /**
+   * Handle image upload - extracts GPS and starts processing
+   */
+  const handleImageUpload = useCallback(async (file) => {
+    if (!file) {
+      updateState({
+        imageFile: null,
+        imagePreview: null,
+        currentStep: 'upload',
+        error: null,
+        needsManualLocation: false
+      });
+      return;
+    }
+
+    const validation = imageService.validateImageFile(file);
+    if (!validation.valid) {
+      updateState({ error: validation.error });
+      return;
+    }
+
+    try {
+      updateState({
+        isLoading: true,
+        loadingMessage: 'Processing image...',
+        error: null,
+        currentStep: 'processing',
+        imageFile: file,
+        needsManualLocation: false
+      });
+
+      // ⚡ PARALLEL: GPS + Preview
+      console.log('⚡ Extracting GPS & creating preview...');
+      const [gpsData, preview] = await Promise.all([
+        imageService.extractGPSFromImage(file),
+        imageService.createImagePreview(file)
+      ]);
+
+      console.log('✅ GPS extraction complete:', gpsData);
+      console.log('✅ Preview creation complete, length:', preview?.length);
+      console.log('🔍 Component mounted?', isMounted.current);
+
+      console.log('📍 GPS Status:', {
+        hasGPS: gpsData.hasGPS,
+        source: gpsData.source,
+        latitude: gpsData.latitude,
+        longitude: gpsData.longitude
+      });
+
+      // Check if GPS is available
+      if (!gpsData.hasGPS) {
+        console.warn('⚠️ No GPS - requesting manual location');
+        console.log('📦 Updating state:', {
+          needsManualLocation: true,
+          currentStep: 'processing',
+          hasPreview: !!preview,
+          hasFile: !!file
+        });
+        updateState({
+          gpsData,
+          imagePreview: preview,
+          needsManualLocation: true,
+          usingFallbackLocation: true,
+          isLoading: false,
+          loadingMessage: 'Please set your location to continue...',
+          currentStep: 'processing'
+        });
+        console.log('✅ State updated - waiting for manual location');
+        return; // STOP - wait for manual location
+      }
+
+      console.log('✅ GPS found - continuing with automatic processing');
+
+      // Continue with GPS data
+      await processWithLocation(file, preview, gpsData, false);
+
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      
+      if (!isMounted.current) return;
+
+      updateState({
+        error: error.message || 'Failed to process image',
         isLoading: false,
         loadingMessage: '',
         currentStep: 'upload'
       });
     }
-  }, [state.useAI, updateState]);
+  }, [updateState, processWithLocation]);
 
   /**
-   * Calculate suitability score based on climate and image analysis
+   * Set manual location and continue processing
+   * NO recursive call to handleImageUpload!
    */
-  const calculateSuitability = (climateAnalysis, imageAnalysis) => {
-    let score = 70; // Base score
-    const warnings = [];
-    const recommendations = [];
-
-    // Temperature check
-    if (climateAnalysis.temperatureStats.average < 10) {
-      score -= 15;
-      warnings.push({
-        type: 'cold-climate',
-        severity: 'medium',
-        message: 'Cold climate may limit tree species options'
-      });
-      recommendations.push('Focus on cold-hardy species');
-    } else if (climateAnalysis.temperatureStats.average > 30) {
-      score -= 10;
-      warnings.push({
-        type: 'hot-climate',
-        severity: 'medium',
-        message: 'Hot climate requires drought-resistant species'
-      });
-      recommendations.push('Choose heat and drought tolerant trees');
-    } else {
-      score += 10;
-    }
-
-    // Rainfall check
-    if (climateAnalysis.annualRainfall < 500) {
-      score -= 20;
-      warnings.push({
-        type: 'low-rainfall',
-        severity: 'high',
-        message: 'Low rainfall area - irrigation may be necessary'
-      });
-      recommendations.push('Plan for regular irrigation');
-    } else if (climateAnalysis.annualRainfall > 2000) {
-      score -= 5;
-      warnings.push({
-        type: 'high-rainfall',
-        severity: 'low',
-        message: 'High rainfall - ensure good drainage'
-      });
-    } else {
-      score += 15;
-    }
-
-    // Soil check
-    if (imageAnalysis.vegetationLevel === 'bare') {
-      score += 10;
-      recommendations.push('Bare land is ideal for new plantings');
-    } else if (imageAnalysis.vegetationLevel === 'dense') {
-      score -= 10;
-      warnings.push({
-        type: 'dense-vegetation',
-        severity: 'medium',
-        message: 'Dense existing vegetation may require clearing'
-      });
-    }
-
-    // Determine level
-    let level;
-    if (score >= 80) level = 'excellent';
-    else if (score >= 65) level = 'good';
-    else if (score >= 50) level = 'moderate';
-    else level = 'challenging';
-
-    return {
-      suitabilityScore: Math.max(0, Math.min(100, score)),
-      suitabilityLevel: level,
-      warnings,
-      recommendations
-    };
-  };
-
   const setManualLocation = useCallback(async (latitude, longitude) => {
+    console.log('📍 Manual location set:', { latitude, longitude });
+    console.log('📦 Current state snapshot:', {
+      hasFile: !!state.imageFile,
+      hasPreview: !!state.imagePreview,
+      fileName: state.imageFile?.name,
+      previewLength: state.imagePreview?.length
+    });
+    
+    const currentFile = state.imageFile;
+    const currentPreview = state.imagePreview;
+    
+    if (!currentFile) {
+      console.error('❌ No image file available in state');
+      updateState({ error: 'Please upload an image first' });
+      return;
+    }
+
+    console.log('✅ File found, creating manual GPS data...');
+
     try {
       updateState({
         isLoading: true,
-        loadingMessage: 'Getting location information...',
-        error: null
+        loadingMessage: 'Processing with your location...',
+        error: null,
+        needsManualLocation: false
       });
 
-      const locationData = await locationService.reverseGeocode(latitude, longitude);
-      const gpsData = {
+      const manualGpsData = {
         latitude,
         longitude,
         altitude: null,
@@ -274,25 +492,27 @@ const useReforestation = () => {
         source: 'manual'
       };
 
-      if (!isMounted.current) return;
+      console.log('🚀 Starting processWithLocation with manual data:', manualGpsData);
 
-      updateState({
-        gpsData,
-        locationData,
-        isLoading: false,
-        loadingMessage: ''
-      });
+      // Continue processing with manual location
+      await processWithLocation(currentFile, currentPreview, manualGpsData, true);
+
+      console.log('✅ processWithLocation completed');
 
     } catch (error) {
+      console.error('❌ Manual location error:', error);
+      console.error('Stack trace:', error.stack);
+      
       if (!isMounted.current) return;
       
       updateState({
-        error: 'Failed to get location information',
+        error: error.message || 'Failed to set location',
         isLoading: false,
-        loadingMessage: ''
+        loadingMessage: '',
+        currentStep: 'processing'
       });
     }
-  }, [updateState]);
+  }, [state.imageFile, state.imagePreview, updateState, processWithLocation]);
 
   const selectTree = useCallback((tree) => {
     updateState({ selectedTree: tree });
@@ -300,37 +520,38 @@ const useReforestation = () => {
 
   const recalculateRecommendations = useCallback(async (params = {}) => {
     if (!state.locationData || !state.climateData || !state.imageAnalysis) {
-      updateState({ error: 'Missing required data for recommendations' });
+      updateState({ error: 'Missing required data' });
       return;
     }
 
     try {
       updateState({
         isLoading: true,
-        loadingMessage: 'Recalculating recommendations...',
+        loadingMessage: 'Recalculating...',
         error: null
       });
 
-      const recommendationResult = await recommendationService.generateRecommendations({
+      const result = await generateRecommendationsWithFallback({
         location: state.locationData,
         climateData: state.climateData,
         imageAnalysis: state.imageAnalysis,
         useAI: params.useAI ?? state.useAI,
-        ...params
+        usingFallbackLocation: state.usingFallbackLocation,
+        manualLocation: state.gpsData?.source === 'manual'
       });
 
       if (!isMounted.current) return;
 
-      if (!recommendationResult.success) {
-        throw new Error(recommendationResult.error);
+      if (!result.success || !result.recommendations?.length) {
+        throw new Error('Failed to generate recommendations');
       }
 
       updateState({
-        recommendations: recommendationResult.recommendations,
-        selectedTree: recommendationResult.recommendations[0],
-        plantingStrategy: recommendationResult.plantingStrategy,
-        impactMetrics: recommendationResult.impactMetrics,
-        aiInsights: recommendationResult.aiInsights,
+        recommendations: result.recommendations,
+        selectedTree: result.recommendations[0],
+        plantingStrategy: result.plantingStrategy,
+        impactMetrics: result.impactMetrics,
+        aiInsights: result.aiInsights,
         isLoading: false,
         loadingMessage: ''
       });
@@ -339,12 +560,12 @@ const useReforestation = () => {
       if (!isMounted.current) return;
       
       updateState({
-        error: error.message || 'Failed to recalculate recommendations',
+        error: error.message || 'Recalculation failed',
         isLoading: false,
         loadingMessage: ''
       });
     }
-  }, [state, updateState]);
+  }, [state.locationData, state.climateData, state.imageAnalysis, state.useAI, state.usingFallbackLocation, state.gpsData, updateState, generateRecommendationsWithFallback]);
 
   const generatePlantingGuide = useCallback(async () => {
     if (!state.selectedTree || !openAIService.isOpenAIConfigured()) {
@@ -352,17 +573,15 @@ const useReforestation = () => {
     }
 
     try {
-      const guide = await openAIService.generatePlantingGuide(
+      return await openAIService.generatePlantingGuide(
         state.selectedTree,
         {
           location: state.locationData,
           climate: state.climateData
         }
       );
-
-      return guide;
     } catch (error) {
-      console.error('Planting guide generation error:', error);
+      console.error('Planting guide error:', error);
       return null;
     }
   }, [state.selectedTree, state.locationData, state.climateData]);
@@ -371,8 +590,10 @@ const useReforestation = () => {
     return {
       metadata: {
         generatedAt: new Date().toISOString(),
-        version: '1.0',
-        generator: 'ReForest.AI'
+        version: '2.0',
+        generator: 'ReForest.AI',
+        usingFallbackLocation: state.usingFallbackLocation,
+        locationSource: state.gpsData?.source || 'unknown'
       },
       location: state.locationData,
       gps: state.gpsData,
@@ -408,7 +629,9 @@ const useReforestation = () => {
       loadingMessage: '',
       error: null,
       useAI: state.useAI,
-      openAIKey: state.openAIKey
+      openAIKey: state.openAIKey,
+      needsManualLocation: false,
+      usingFallbackLocation: false
     });
   }, [state.useAI, state.openAIKey]);
 
@@ -420,9 +643,6 @@ const useReforestation = () => {
     updateState({ useAI: !state.useAI });
   }, [state.useAI, updateState]);
 
-  /**
-   * Get detailed progress with granular steps
-   */
   const getProgress = useCallback(() => {
     if (!state.isLoading) {
       const steps = {
@@ -434,7 +654,6 @@ const useReforestation = () => {
       return steps[state.currentStep] || 0;
     }
 
-    // Granular progress during loading
     let progress = 0;
     if (state.gpsData) progress += 15;
     if (state.imagePreview) progress += 5;
@@ -443,13 +662,11 @@ const useReforestation = () => {
     if (state.climateData) progress += 25;
     if (state.recommendations) progress += 20;
     
-    return Math.min(95, progress); // Cap at 95% until fully complete
+    return Math.min(95, progress);
   }, [state]);
 
   const isComplete = useCallback(() => {
-    return state.currentStep === 'results' && 
-           state.recommendations && 
-           state.recommendations.length > 0;
+    return state.currentStep === 'results' && state.recommendations?.length > 0;
   }, [state.currentStep, state.recommendations]);
 
   const canProceed = useCallback(() => {

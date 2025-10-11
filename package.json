@@ -14,9 +14,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "axios": "^1.12.2",
     "D": "^1.0.0",
+    "dotenv": "^17.2.3",
     "exif-js": "^2.3.0",
     "lucide-react": "^0.545.0",
+    "openai": "^6.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.2.1",

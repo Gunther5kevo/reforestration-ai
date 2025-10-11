@@ -15,28 +15,47 @@ import { getSuitableTrees, enrichTreeData } from './treeDataService';
  */
 export const generateRecommendations = async (params) => {
   const {
-    
     location,
     climateData,
     imageAnalysis,
     useAI = true,
-    enrichWithAPIs = false
+    enrichWithAPIs = false,
+    relaxed = false,
+    toleranceBuffer = 0,
+    manualLocation = false
   } = params;
   
+  console.log('🌳 Generating recommendations with params:', {
+    location: location?.city,
+    temp: climateData?.currentConditions?.temperature,
+    rainfall: climateData?.annualRainfall,
+    soil: imageAnalysis?.soilType,
+    useAI,
+    relaxed,
+    manualLocation
+  });
+  
   try {
-    // Step 1: Get climate-compatible trees
+    // Step 1: Get climate-compatible trees with optional relaxed criteria
     const suitableTrees = await getSuitableTrees({
       temperature: climateData.currentConditions.temperature,
       rainfall: climateData.annualRainfall,
       soilType: imageAnalysis.soilType,
       latitude: location.coordinates.latitude,
-      longitude: location.coordinates.longitude
+      longitude: location.coordinates.longitude,
+      relaxed,
+      toleranceBuffer
     });
     
+    console.log(`📊 Found ${suitableTrees.length} suitable trees`);
+    
     if (suitableTrees.length === 0) {
+      console.warn('⚠️ No suitable trees found');
       return {
         success: false,
-        error: 'No suitable trees found for this location',
+        error: manualLocation 
+          ? 'No suitable trees found for this location. Try a different location or check climate data.'
+          : 'No suitable trees found. Please enable GPS and take a new photo.',
         fallbackTrees: TREE_DATABASE.slice(0, 3)
       };
     }
@@ -54,18 +73,27 @@ export const generateRecommendations = async (params) => {
     // Sort by score
     scoredTrees.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
     
+    console.log('🏆 Top 3 scored trees:', scoredTrees.slice(0, 3).map(t => ({
+      name: t.commonName,
+      score: t.compatibilityScore.toFixed(1)
+    })));
+    
     // Step 3: Enhance with OpenAI if enabled
     let aiEnhancedData = null;
     if (useAI && openAIService.isOpenAIConfigured() && CONFIG.USE_OPENAI_ENHANCEMENT) {
       try {
+        console.log('🤖 Enhancing with AI...');
         const topCandidates = scoredTrees.slice(0, 8); // Send top 8 to AI
         
         aiEnhancedData = await openAIService.enhanceRecommendations({
           location,
           climate: climateData,
           imageAnalysis,
-          candidateTrees: topCandidates
+          candidateTrees: topCandidates,
+          manualLocation
         });
+        
+        console.log('✨ AI enhancement:', aiEnhancedData.success ? 'SUCCESS' : 'FAILED');
         
         // Apply AI rankings if successful
         if (aiEnhancedData.success && aiEnhancedData.data.rankings) {
@@ -126,6 +154,12 @@ export const generateRecommendations = async (params) => {
       plantingStrategy.density
     );
     
+    console.log('✅ Recommendations generated successfully:', {
+      count: topRecommendations.length,
+      aiEnhanced: !!aiEnhancedData?.success,
+      manualLocation
+    });
+    
     return {
       success: true,
       recommendations: topRecommendations,
@@ -133,16 +167,19 @@ export const generateRecommendations = async (params) => {
       impactMetrics,
       aiEnhanced: !!aiEnhancedData?.success,
       aiInsights: aiEnhancedData?.data || null,
+      manualLocationUsed: manualLocation,
       metadata: {
         totalCandidates: suitableTrees.length,
         topCount: topRecommendations.length,
         generatedAt: new Date().toISOString(),
-        aiTokensUsed: aiEnhancedData?.tokensUsed || 0
+        aiTokensUsed: aiEnhancedData?.tokensUsed || 0,
+        locationSource: manualLocation ? 'manual' : 'gps',
+        relaxedMode: relaxed
       }
     };
     
   } catch (error) {
-    console.error('Recommendation generation error:', error);
+    console.error('❌ Recommendation generation error:', error);
     return {
       success: false,
       error: error.message,
@@ -189,7 +226,7 @@ const calculateCompatibilityScore = (tree, context) => {
   }
   
   // Soil moisture compatibility (10 points)
-  const moistureLevel = climate.soilMoisture.level;
+  const moistureLevel = climate.soilMoisture?.level || 'moderate';
   if (
     (tree.waterNeeds === 'low' && moistureLevel === 'dry') ||
     (tree.waterNeeds === 'moderate' && (moistureLevel === 'moderate' || moistureLevel === 'moist')) ||
@@ -258,7 +295,8 @@ const generatePlantingStrategy = (trees, climateData, location, aiStrategy = nul
   }
   
   // Best planting months based on climate
-  const bestMonths = climateData.suitability.bestPlantingMonths;
+  const bestMonths = climateData.suitability?.bestPlantingMonths || 
+    ['March', 'April', 'May', 'October', 'November'];
   
   // Spacing based on average max height
   const avgHeight = trees.reduce((sum, t) => sum + t.maxHeight, 0) / trees.length;
