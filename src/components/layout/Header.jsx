@@ -1,18 +1,40 @@
 /**
  * Header Component for ReForest.AI
  * Displays app branding, navigation, and user actions
+ * FIXED: Mobile menu now works properly
  */
-import React from 'react';
-import { Leaf, Menu, X, Info, Github, Heart } from 'lucide-react';
-import COLORS from '../../constants/colors';
+import React, { useState } from 'react';
+import { Leaf, Menu, X, Info, Heart } from 'lucide-react';
+import { COLORS } from '../../constants/colors';
 import CONFIG from '../../constants/config';
 
-const Header = ({ 
-  onAboutClick,
-  onHelpClick,
-  showMobileMenu = false,
-  onToggleMobileMenu 
-}) => {
+const Header = () => {
+  // Internal state for mobile menu
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  const toggleMobileMenu = () => {
+    setShowMobileMenu(prev => !prev);
+  };
+
+  const closeMobileMenu = () => {
+    setShowMobileMenu(false);
+  };
+
+  const handleAboutClick = () => {
+    closeMobileMenu();
+    // Scroll to top or show about modal
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleHelpClick = () => {
+    closeMobileMenu();
+    // Scroll to "How It Works" section if on upload page
+    const howItWorksSection = document.querySelector('[data-section="how-it-works"]');
+    if (howItWorksSection) {
+      howItWorksSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <header 
       className="sticky top-0 z-50 shadow-md"
@@ -40,20 +62,20 @@ const Header = ({
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
-            <NavLink onClick={onAboutClick} icon={Info}>
+            <NavLink onClick={handleAboutClick} icon={Info}>
               About
             </NavLink>
-            <NavLink onClick={onHelpClick} icon={Heart}>
+            <NavLink onClick={handleHelpClick} icon={Heart}>
               How It Works
             </NavLink>
-            
           </nav>
 
           {/* Mobile Menu Button */}
           <button
-            onClick={onToggleMobileMenu}
+            onClick={toggleMobileMenu}
             className="md:hidden p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
             aria-label="Toggle menu"
+            aria-expanded={showMobileMenu}
           >
             {showMobileMenu ? (
               <X className="w-6 h-6" />
@@ -67,13 +89,12 @@ const Header = ({
         {showMobileMenu && (
           <div className="md:hidden py-4 border-t border-white/10">
             <nav className="flex flex-col space-y-3">
-              <MobileNavLink onClick={onAboutClick} icon={Info}>
+              <MobileNavLink onClick={handleAboutClick} icon={Info}>
                 About ReForest.AI
               </MobileNavLink>
-              <MobileNavLink onClick={onHelpClick} icon={Heart}>
+              <MobileNavLink onClick={handleHelpClick} icon={Heart}>
                 How It Works
               </MobileNavLink>
-              
             </nav>
           </div>
         )}

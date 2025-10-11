@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Download, AlertCircle, CheckCircle, Info, XCircle } from 'lucide-react';
 
-
-import useReforestation from './hooks/useReforestration';
+import useReforestation from './hooks/useReforestation';
 
 // Import export helpers
 import { exportAsCSV, exportAsTXT, exportAsJSON, generateShareText } from './utils/exportHelpers';
@@ -120,6 +119,8 @@ const ExportMenu = ({ plan, onExport }) => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
         });
+        break;
+      default:
         break;
     }
     
@@ -332,16 +333,17 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: COLORS.background }}>
+      {/* Header with internal mobile menu state management */}
       <Header />
       
       <main className="flex-1 py-12 px-4">
-        {/* Alert Display */}
+        {/* Fixed Alert Display - Always visible at top */}
         {alertConfig && (
-          <div className="max-w-2xl mx-auto">
+          <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-2xl px-4 animate-slideDown">
             <Alert
               type={alertConfig.type}
               title={alertConfig.title}
-              onClose={alertConfig.showClose ? clearError : undefined}
+              onClose={alertConfig.showClose ? () => setShowExportSuccess(false) : undefined}
               action={alertConfig.action}
             >
               {alertConfig.message}
@@ -369,7 +371,7 @@ function App() {
             <ImageUploader onImageUpload={handleImageUpload} />
             
             {/* How It Works Section */}
-            <div className="max-w-4xl mx-auto mt-16">
+            <div className="max-w-4xl mx-auto mt-16" data-section="how-it-works">
               <h3 className="text-2xl font-bold text-center mb-8" style={{ color: COLORS.textDark }}>
                 How It Works
               </h3>
@@ -401,7 +403,19 @@ function App() {
             <h3 className="text-2xl font-bold mb-4 mt-6" style={{ color: COLORS.textDark }}>
               Analyzing Your Location...
             </h3>
-            <p className="text-lg text-gray-600 mb-8">{state.loadingMessage}</p>
+            <p className="text-lg text-gray-600 mb-8">{state.loadingMessage || 'Processing...'}</p>
+            
+            {/* Debug Info */}
+            <div className="max-w-md mx-auto mb-4 p-4 bg-blue-50 rounded-lg text-left text-sm">
+              <p className="font-bold text-blue-900 mb-2">Debug Info:</p>
+              <p className="text-blue-800">Current Step: {state.currentStep}</p>
+              <p className="text-blue-800">GPS Data: {state.gpsData ? '✓' : '✗'}</p>
+              <p className="text-blue-800">Location: {state.locationData ? '✓' : '✗'}</p>
+              <p className="text-blue-800">Climate: {state.climateData ? '✓' : '✗'}</p>
+              <p className="text-blue-800">Analysis: {state.imageAnalysis ? '✓' : '✗'}</p>
+              <p className="text-blue-800">Recommendations: {state.recommendations ? '✓' : '✗'}</p>
+              <p className="text-blue-800">Error: {state.error || 'None'}</p>
+            </div>
             
             {/* Progress Bar */}
             <div className="max-w-md mx-auto mb-8">
@@ -414,6 +428,7 @@ function App() {
                   }}
                 />
               </div>
+              <p className="text-sm text-gray-500 mt-2">{getProgress()}% Complete</p>
             </div>
             
             {/* Progress indicators */}
@@ -479,7 +494,7 @@ function App() {
           <div className="max-w-7xl mx-auto space-y-8">
             {/* Success Message with Export */}
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between flex-wrap gap-4">
                 <div className="flex-1">
                   <div className="text-6xl mb-4">🎉</div>
                   <h2 className="text-2xl font-bold mb-2" style={{ color: COLORS.textDark }}>
@@ -507,28 +522,43 @@ function App() {
             {state.imageFile && <ImagePreview file={state.imageFile} analysis={state.imageAnalysis} />}
             
             {/* Location Display */}
-            {state.locationData && <LocationDisplay location={state.locationData} gpsData={state.gpsData} />}
+            {state.locationData && (
+              <LocationDisplay 
+                locationData={state.locationData}
+                suitability={state.suitability}
+                climateZone={state.climateData?.climateZone}
+                elevation={state.locationData?.elevation}
+              />
+            )}
             
             {/* Climate Analysis */}
-            {state.climateData && <ClimateAnalysis climate={state.climateData} />}
+            {state.climateData && (
+              <ClimateAnalysis 
+                climateData={state.climateData}
+                analysis={state.climateAnalysis}
+              />
+            )}
             
             {/* Tree Recommendations */}
             <TreeRecommendationList 
-              trees={state.recommendations}
-              plantingStrategy={state.plantingStrategy}
-              aiInsights={state.aiInsights}
+              recommendations={state.recommendations}
+              aiEnhanced={!!state.aiInsights}
             />
             
             {/* Impact Visualization */}
-            {state.impactMetrics && <ImpactVisualization impact={state.impactMetrics} />}
+            {state.impactMetrics && (
+              <ImpactVisualization 
+                impactMetrics={state.impactMetrics}
+                recommendations={state.recommendations}
+              />
+            )}
             
             {/* Planting Guide */}
             {state.recommendations.length > 0 && (
               <PlantingGuide 
-                tree={state.recommendations[0]}
-                location={state.locationData}
-                climate={state.climateData}
-                strategy={state.plantingStrategy}
+                plantingStrategy={state.plantingStrategy}
+                recommendations={state.recommendations}
+                aiInsights={state.aiInsights}
               />
             )}
             
