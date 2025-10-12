@@ -1,7 +1,7 @@
 /**
  * Header Component for ReForest.AI
  * Displays app branding, navigation, and user actions
- * FIXED: Mobile menu now works properly
+ * FIXED: Mobile menu now works properly with smooth scrolling
  */
 import React, { useState } from 'react';
 import { Leaf, Menu, X, Info, Heart } from 'lucide-react';
@@ -22,16 +22,19 @@ const Header = () => {
 
   const handleAboutClick = () => {
     closeMobileMenu();
-    // Scroll to top or show about modal
+    // Scroll to top to see hero section
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleHelpClick = () => {
     closeMobileMenu();
-    // Scroll to "How It Works" section if on upload page
-    const howItWorksSection = document.querySelector('[data-section="how-it-works"]');
+    // Scroll to "How It Works" section
+    const howItWorksSection = document.getElementById('how-it-works');
     if (howItWorksSection) {
-      howItWorksSection.scrollIntoView({ behavior: 'smooth' });
+      howItWorksSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      // If not found, scroll to a reasonable position
+      window.scrollTo({ top: window.innerHeight * 0.6, behavior: 'smooth' });
     }
   };
 

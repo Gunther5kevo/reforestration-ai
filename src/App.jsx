@@ -610,7 +610,7 @@ function App() {
                 />
 
                 {/* How It Works Section */}
-                <div className="max-w-4xl mx-auto mt-16">
+                <div id="how-it-works" className="max-w-4xl mx-auto mt-16">
                   <h3
                     className="text-2xl font-bold text-center mb-8"
                     style={{ color: COLORS.textDark }}
