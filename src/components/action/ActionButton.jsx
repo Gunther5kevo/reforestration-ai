@@ -1,33 +1,57 @@
 /**
- * ActionButtons Component
+ * ActionButtons Component - FIXED VERSION
  * Provides export, share, and action buttons for recommendations
+ * 
+ * FIXES:
+ * - Added null/undefined checks for all props
+ * - Safe array access with optional chaining
+ * - Fallback values for missing data
  */
 import React, { useState } from 'react';
 import { Download, Share2, Mail, Printer, Copy, Check, FileText } from 'lucide-react';
 import COLORS from '../../constants/colors';
 
 const ActionButtons = ({ 
-  recommendations, 
-  plantingStrategy, 
-  impactMetrics,
-  locationData 
+  recommendations = [], 
+  plantingStrategy = {}, 
+  impactMetrics = {},
+  locationData = {} 
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Safe data extraction with fallbacks
+  const hasRecommendations = recommendations && recommendations.length > 0;
+  const topTree = hasRecommendations ? recommendations[0] : null;
+  const cityName = locationData?.city || 'your location';
+  const countryName = locationData?.country || '';
+
   // Generate summary text for sharing
   const generateSummaryText = () => {
-    const topTree = recommendations[0];
-    return `🌳 ReForest.AI Recommendations for ${locationData.city}, ${locationData.country}
+    if (!hasRecommendations) {
+      return `🌳 ReForest.AI - Get personalized tree recommendations for your location!
 
-Top Recommendation: ${topTree.commonName} (${Math.round(topTree.finalScore || topTree.compatibilityScore)}% match)
+Visit ReForest.AI to analyze your land and discover the best trees to plant!`;
+    }
+
+    const treesPerHectare = impactMetrics?.density?.treesPerHectare || 'N/A';
+    const carbonYear10 = impactMetrics?.carbonSequestration?.year10 || 0;
+    const carbonTons = carbonYear10 > 0 ? (carbonYear10 / 1000).toFixed(1) : 'N/A';
+    const biodiversityScore = impactMetrics?.biodiversity?.score || 'N/A';
+    const bestMonths = plantingStrategy?.bestMonths || ['Spring', 'Fall'];
+    const topMonths = Array.isArray(bestMonths) ? bestMonths.slice(0, 3).join(', ') : 'Spring/Fall';
+    const matchScore = Math.round(topTree?.finalScore || topTree?.compatibilityScore || 0);
+
+    return `🌳 ReForest.AI Recommendations for ${cityName}, ${countryName}
+
+Top Recommendation: ${topTree?.commonName || 'N/A'} (${matchScore}% match)
 
 Environmental Impact (10 years):
-🌱 ${impactMetrics.density.treesPerHectare} trees/hectare
-🍃 ${(impactMetrics.carbonSequestration.year10 / 1000).toFixed(1)} tons CO₂ captured
-💚 Biodiversity Score: ${impactMetrics.biodiversity.score}/100
+🌱 ${treesPerHectare} trees/hectare
+🍃 ${carbonTons} tons CO₂ captured
+💚 Biodiversity Score: ${biodiversityScore}/100
 
-Best planting months: ${plantingStrategy.bestMonths.slice(0, 3).join(', ')}
+Best planting months: ${topMonths}
 
 Get your personalized tree recommendations at ReForest.AI!`;
   };
@@ -57,7 +81,7 @@ Get your personalized tree recommendations at ReForest.AI!`;
 
   // Handle Email Share
   const handleEmailShare = () => {
-    const subject = encodeURIComponent(`Tree Planting Recommendations for ${locationData.city}`);
+    const subject = encodeURIComponent(`Tree Planting Recommendations for ${cityName}`);
     const body = encodeURIComponent(generateSummaryText());
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
@@ -86,6 +110,28 @@ Get your personalized tree recommendations at ReForest.AI!`;
     window.print();
   };
 
+  // Safe JSON download
+  const handleDownloadJSON = () => {
+    try {
+      const dataStr = JSON.stringify({
+        location: locationData || {},
+        recommendations: recommendations || [],
+        plantingStrategy: plantingStrategy || {},
+        impactMetrics: impactMetrics || {}
+      }, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `reforest-ai-${cityName.replace(/\s/g, '-')}-${Date.now()}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download JSON:', error);
+      alert('Failed to download data');
+    }
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       {/* Main Action Buttons */}
@@ -100,7 +146,7 @@ Get your personalized tree recommendations at ReForest.AI!`;
             icon={Download}
             label="Export PDF"
             onClick={handleExportPDF}
-            disabled={isExporting}
+            disabled={isExporting || !hasRecommendations}
             loading={isExporting}
             primary
           />
@@ -141,27 +187,14 @@ Get your personalized tree recommendations at ReForest.AI!`;
             icon={Printer}
             label="Print Report"
             onClick={handlePrint}
+            disabled={!hasRecommendations}
           />
 
           {/* Download Data */}
           <ActionButton
             icon={FileText}
             label="Download JSON"
-            onClick={() => {
-              const dataStr = JSON.stringify({
-                location: locationData,
-                recommendations: recommendations,
-                plantingStrategy: plantingStrategy,
-                impactMetrics: impactMetrics
-              }, null, 2);
-              const dataBlob = new Blob([dataStr], { type: 'application/json' });
-              const url = URL.createObjectURL(dataBlob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `reforest-ai-${locationData.city}-${Date.now()}.json`;
-              link.click();
-              URL.revokeObjectURL(url);
-            }}
+            onClick={handleDownloadJSON}
           />
 
           {/* Start Over */}
@@ -174,34 +207,36 @@ Get your personalized tree recommendations at ReForest.AI!`;
         </div>
       </div>
 
-      {/* Quick Stats Summary */}
-      <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl shadow-lg p-6">
-        <h3 className="text-lg font-bold mb-4" style={{ color: COLORS.textDark }}>
-          📊 Quick Summary
-        </h3>
-        <div className="grid md:grid-cols-4 gap-4">
-          <SummaryStat
-            label="Top Tree"
-            value={recommendations[0]?.commonName}
-            icon="🌳"
-          />
-          <SummaryStat
-            label="Match Score"
-            value={`${Math.round(recommendations[0]?.finalScore || recommendations[0]?.compatibilityScore)}%`}
-            icon="✨"
-          />
-          <SummaryStat
-            label="CO₂ Capture"
-            value={`${(impactMetrics.carbonSequestration.year10 / 1000).toFixed(1)}t`}
-            icon="🍃"
-          />
-          <SummaryStat
-            label="Trees/Hectare"
-            value={impactMetrics.density.treesPerHectare}
-            icon="🌲"
-          />
+      {/* Quick Stats Summary - Only show if we have data */}
+      {hasRecommendations && (
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl shadow-lg p-6">
+          <h3 className="text-lg font-bold mb-4" style={{ color: COLORS.textDark }}>
+            📊 Quick Summary
+          </h3>
+          <div className="grid md:grid-cols-4 gap-4">
+            <SummaryStat
+              label="Top Tree"
+              value={topTree?.commonName || 'N/A'}
+              icon="🌳"
+            />
+            <SummaryStat
+              label="Match Score"
+              value={`${Math.round(topTree?.finalScore || topTree?.compatibilityScore || 0)}%`}
+              icon="✨"
+            />
+            <SummaryStat
+              label="CO₂ Capture"
+              value={impactMetrics?.carbonSequestration ? `${(impactMetrics.carbonSequestration.year10 / 1000).toFixed(1)}t` : 'N/A'}
+              icon="🍃"
+            />
+            <SummaryStat
+              label="Trees/Hectare"
+              value={impactMetrics?.density?.treesPerHectare || 'N/A'}
+              icon="🌲"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Share Instructions */}
       <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
@@ -292,7 +327,7 @@ const SummaryStat = ({ label, value, icon }) => (
   <div className="bg-white p-4 rounded-lg text-center shadow hover:shadow-md transition-shadow">
     <div className="text-2xl mb-2">{icon}</div>
     <p className="text-2xl font-bold mb-1" style={{ color: COLORS.accent }}>
-      {value}
+      {value || 'N/A'}
     </p>
     <p className="text-xs text-gray-600">{label}</p>
   </div>
