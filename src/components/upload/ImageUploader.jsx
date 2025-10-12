@@ -1,15 +1,17 @@
 /**
- * ImageUploader Component (Improved)
+ * ImageUploader Component with Nature Validation
  * Handles drag-and-drop, file selection, and camera capture for images
  */
 import React, { useState, useRef } from 'react';
-import { Upload, Camera, Image as ImageIcon, MapPin, AlertCircle } from 'lucide-react';
+import { Upload, Camera, Image as ImageIcon, MapPin, AlertCircle, AlertTriangle } from 'lucide-react';
 import COLORS from '../../constants/colors';
-import { validateImageFile } from '../../services/imageService';
+import { validateImageFileEnhanced } from '../../services/imageService';
 
 const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState(null);
+  const [suggestion, setSuggestion] = useState(null);
+  const [isValidating, setIsValidating] = useState(false);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
@@ -17,7 +19,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isProcessing) {
+    if (!isProcessing && !isValidating) {
       setIsDragging(true);
     }
   };
@@ -33,7 +35,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
     e.stopPropagation();
     setIsDragging(false);
 
-    if (isProcessing) return;
+    if (isProcessing || isValidating) return;
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
@@ -52,42 +54,63 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
   };
 
   // Validate and send file to parent
-  const handleFile = (file) => {
+  const handleFile = async (file) => {
     setError(null);
+    setSuggestion(null);
+    setIsValidating(true);
 
-    const validation = validateImageFile(file);
-    if (!validation.valid) {
-      setError(validation.error);
-      return;
+    try {
+      // Use enhanced validation with nature check
+      const validation = await validateImageFileEnhanced(file);
+      
+      if (!validation.valid) {
+        setError(validation.error);
+        if (validation.suggestion) {
+          setSuggestion(validation.suggestion);
+        }
+        setIsValidating(false);
+        return;
+      }
+
+      // Show confidence if available
+      if (validation.natureCheck?.confidence < 75) {
+        console.warn(`⚠️ Medium confidence: ${validation.natureCheck.confidence}%`);
+      }
+
+      setIsValidating(false);
+      onImageUpload(file);
+    } catch (err) {
+      console.error('Validation error:', err);
+      setError('Failed to validate image. Please try again.');
+      setIsValidating(false);
     }
-
-    onImageUpload(file);
   };
 
   // Handle button clicks - prevent event bubbling
   const handleUploadClick = (e) => {
     e.stopPropagation();
-    if (!isProcessing) {
+    if (!isProcessing && !isValidating) {
       fileInputRef.current?.click();
     }
   };
 
   const handleCameraClick = (e) => {
     e.stopPropagation();
-    if (!isProcessing) {
+    if (!isProcessing && !isValidating) {
       cameraInputRef.current?.click();
     }
   };
 
   // Handle drop zone click (only when not clicking buttons)
   const handleDropZoneClick = (e) => {
-    // Only trigger if clicking the drop zone itself, not the buttons
     if (e.target === e.currentTarget || e.target.closest('.drop-zone-content')) {
-      if (!isProcessing) {
+      if (!isProcessing && !isValidating) {
         fileInputRef.current?.click();
       }
     }
   };
+
+  const isDisabled = isProcessing || isValidating;
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -98,7 +121,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
             ? 'border-green-500 bg-green-50' 
             : 'border-gray-300 hover:border-green-400 bg-white'
           }
-          ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -112,16 +135,16 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
           accept="image/jpeg,image/jpg,image/png,image/heic,image/heif"
           onChange={handleFileSelect}
           className="hidden"
-          disabled={isProcessing}
+          disabled={isDisabled}
         />
         <input
           ref={cameraInputRef}
           type="file"
           accept="image/*"
-          capture="environment" // opens back camera on mobile
+          capture="environment"
           onChange={handleFileSelect}
           className="hidden"
-          disabled={isProcessing}
+          disabled={isDisabled}
         />
 
         <div className="drop-zone-content pointer-events-none">
@@ -148,7 +171,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
               Drag and drop, upload from files, or take a photo directly
             </p>
             <p className="text-sm text-gray-500">
-              Supported: JPG, PNG, HEIC • Max size: 10MB
+              Supported: JPG, PNG, HEIC • Max size: 15MB
             </p>
           </div>
         </div>
@@ -159,7 +182,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
             type="button"
             onClick={handleUploadClick}
             className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
-            disabled={isProcessing}
+            disabled={isDisabled}
           >
             <Upload className="w-5 h-5" />
             Choose File
@@ -169,7 +192,7 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
             type="button"
             onClick={handleCameraClick}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
-            disabled={isProcessing}
+            disabled={isDisabled}
           >
             <Camera className="w-5 h-5" />
             Take Photo
@@ -187,6 +210,31 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
             <span>Soil Analysis</span>
           </div>
         </div>
+
+        {/* Validating Overlay */}
+        {isValidating && (
+          <div className="absolute inset-0 bg-white bg-opacity-95 rounded-xl flex items-center justify-center z-10">
+            <div className="text-center">
+              <div className="relative">
+                {/* Spinner */}
+                <div
+                  className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200 mx-auto"
+                  style={{ borderTopColor: COLORS.secondary }}
+                />
+                {/* Inner icon */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6" style={{ color: COLORS.secondary }} />
+                </div>
+              </div>
+              <p className="font-semibold text-lg mt-4" style={{ color: COLORS.textDark }}>
+                Validating image...
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Checking if this is an outdoor/nature photo
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Processing Overlay */}
         {isProcessing && (
@@ -214,22 +262,37 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
         )}
       </div>
 
-      {/* Error Message */}
+      {/* Error Message with Suggestion */}
       {error && (
-        <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-lg flex items-start gap-3 animate-shake">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-semibold text-red-800">Upload Error</p>
-            <p className="text-sm text-red-600 mt-1">{error}</p>
+        <div className="mt-4 space-y-3">
+          <div className="p-4 bg-red-50 border-2 border-red-200 rounded-lg flex items-start gap-3 animate-shake">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-red-800">Upload Error</p>
+              <p className="text-sm text-red-600 mt-1">{error}</p>
+            </div>
+            <button
+              onClick={() => {
+                setError(null);
+                setSuggestion(null);
+              }}
+              className="text-red-400 hover:text-red-600 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={() => setError(null)}
-            className="text-red-400 hover:text-red-600 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          
+          {suggestion && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+              <div className="text-2xl">💡</div>
+              <div className="flex-1">
+                <p className="font-semibold text-blue-900 mb-1">Suggestion:</p>
+                <p className="text-sm text-blue-800">{suggestion}</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -244,9 +307,41 @@ const ImageUploader = ({ onImageUpload, isProcessing = false }) => {
               <li>• Show the <strong>soil and surrounding vegetation</strong> clearly</li>
               <li>• Capture in <strong>good lighting</strong> (avoid shadows or glare)</li>
               <li>• Include <strong>landscape context</strong> if possible</li>
+              <li>• <strong>Avoid</strong> photos with people, screenshots, or graphics</li>
             </ul>
           </div>
         </div>
+      </div>
+
+      {/* What Makes a Good Photo */}
+      <div className="mt-4 text-center">
+        <details className="text-sm text-gray-600">
+          <summary className="cursor-pointer hover:text-gray-800 inline-flex items-center gap-1 font-medium">
+            <span>What makes a good land photo?</span>
+          </summary>
+          <div className="mt-3 p-4 bg-gray-50 rounded-lg text-left max-w-md mx-auto space-y-3">
+            <div>
+              <p className="font-semibold text-green-700 mb-1">✅ Good Examples:</p>
+              <ul className="text-xs space-y-1 text-gray-700">
+                <li>• Photos of empty fields or plots of land</li>
+                <li>• Pictures showing soil, grass, trees, or vegetation</li>
+                <li>• Landscape photos taken outdoors</li>
+                <li>• Images with visible earth tones (green, brown, gray)</li>
+              </ul>
+            </div>
+            
+            <div>
+              <p className="font-semibold text-red-700 mb-1">❌ Avoid:</p>
+              <ul className="text-xs space-y-1 text-gray-700">
+                <li>• Selfies or photos with people</li>
+                <li>• Screenshots or digital graphics</li>
+                <li>• Indoor photos or building interiors</li>
+                <li>• Text documents or diagrams</li>
+                <li>• Very dark or overexposed images</li>
+              </ul>
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* Supported Formats Info */}

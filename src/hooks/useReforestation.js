@@ -1,7 +1,8 @@
 /**
- * useReforestation Hook - Fixed & Optimized
+ * useReforestation Hook - With Nature Validation
  * 
- * Key fixes:
+ * Key features:
+ * - Nature image validation before processing
  * - No recursive calls in setManualLocation
  * - Proper workflow continuation after manual location
  * - Optimized parallel processing
@@ -19,7 +20,7 @@ const useReforestation = () => {
   const isMounted = useRef(true);
   const isInitialized = useRef(false);
 
-  // Cleanup on unmount - ONLY on actual unmount
+  // Cleanup on unmount
   useEffect(() => {
     isMounted.current = true;
     isInitialized.current = true;
@@ -52,12 +53,11 @@ const useReforestation = () => {
     useAI: true,
     openAIKey: '',
     needsManualLocation: false,
-    usingFallbackLocation: false
+    usingFallbackLocation: false,
+    natureValidation: null // Store nature validation results
   });
 
   const updateState = useCallback((updates) => {
-    // In development, React StrictMode may cause false unmounts
-    // So we update state anyway, but log warnings
     if (!isMounted.current) {
       console.warn('⚠️ Attempting state update after unmount (might be StrictMode)');
     }
@@ -362,7 +362,7 @@ const useReforestation = () => {
   }, [state.useAI, updateState, calculateSuitability, generateRecommendationsWithFallback]);
 
   /**
-   * Handle image upload - extracts GPS and starts processing
+   * Handle image upload with nature validation
    */
   const handleImageUpload = useCallback(async (file) => {
     if (!file) {
@@ -371,37 +371,54 @@ const useReforestation = () => {
         imagePreview: null,
         currentStep: 'upload',
         error: null,
-        needsManualLocation: false
+        needsManualLocation: false,
+        natureValidation: null
       });
-      return;
-    }
-
-    const validation = imageService.validateImageFile(file);
-    if (!validation.valid) {
-      updateState({ error: validation.error });
       return;
     }
 
     try {
       updateState({
         isLoading: true,
-        loadingMessage: 'Processing image...',
+        loadingMessage: 'Validating image...',
         error: null,
         currentStep: 'processing',
         imageFile: file,
         needsManualLocation: false
       });
 
-      // ⚡ PARALLEL: GPS + Preview
-      console.log('⚡ Extracting GPS & creating preview...');
+      // Step 1: Validate that it's a nature image
+      console.log('🔍 Step 1: Validating nature content...');
+      const validation = await imageService.validateImageFileEnhanced(file);
+      
+      if (!validation.valid) {
+        console.error('❌ Nature validation failed:', validation.error);
+        updateState({
+          error: validation.error,
+          isLoading: false,
+          loadingMessage: '',
+          currentStep: 'upload',
+          imageFile: null
+        });
+        return;
+      }
+
+      console.log('✅ Nature validation passed:', validation.natureCheck);
+
+      updateState({
+        natureValidation: validation.natureCheck,
+        loadingMessage: 'Processing image...'
+      });
+
+      // Step 2: Extract GPS & Create Preview (parallel)
+      console.log('⚡ Step 2: Extracting GPS & creating preview...');
       const [gpsData, preview] = await Promise.all([
         imageService.extractGPSFromImage(file),
         imageService.createImagePreview(file)
       ]);
 
       console.log('✅ GPS extraction complete:', gpsData);
-      console.log('✅ Preview creation complete, length:', preview?.length);
-      console.log('🔍 Component mounted?', isMounted.current);
+      console.log('✅ Preview creation complete');
 
       console.log('📍 GPS Status:', {
         hasGPS: gpsData.hasGPS,
@@ -413,12 +430,6 @@ const useReforestation = () => {
       // Check if GPS is available
       if (!gpsData.hasGPS) {
         console.warn('⚠️ No GPS - requesting manual location');
-        console.log('📦 Updating state:', {
-          needsManualLocation: true,
-          currentStep: 'processing',
-          hasPreview: !!preview,
-          hasFile: !!file
-        });
         updateState({
           gpsData,
           imagePreview: preview,
@@ -428,7 +439,6 @@ const useReforestation = () => {
           loadingMessage: 'Please set your location to continue...',
           currentStep: 'processing'
         });
-        console.log('✅ State updated - waiting for manual location');
         return; // STOP - wait for manual location
       }
 
@@ -453,16 +463,9 @@ const useReforestation = () => {
 
   /**
    * Set manual location and continue processing
-   * NO recursive call to handleImageUpload!
    */
   const setManualLocation = useCallback(async (latitude, longitude) => {
     console.log('📍 Manual location set:', { latitude, longitude });
-    console.log('📦 Current state snapshot:', {
-      hasFile: !!state.imageFile,
-      hasPreview: !!state.imagePreview,
-      fileName: state.imageFile?.name,
-      previewLength: state.imagePreview?.length
-    });
     
     const currentFile = state.imageFile;
     const currentPreview = state.imagePreview;
@@ -472,8 +475,6 @@ const useReforestation = () => {
       updateState({ error: 'Please upload an image first' });
       return;
     }
-
-    console.log('✅ File found, creating manual GPS data...');
 
     try {
       updateState({
@@ -492,16 +493,11 @@ const useReforestation = () => {
         source: 'manual'
       };
 
-      console.log('🚀 Starting processWithLocation with manual data:', manualGpsData);
-
       // Continue processing with manual location
       await processWithLocation(currentFile, currentPreview, manualGpsData, true);
 
-      console.log('✅ processWithLocation completed');
-
     } catch (error) {
       console.error('❌ Manual location error:', error);
-      console.error('Stack trace:', error.stack);
       
       if (!isMounted.current) return;
       
@@ -593,7 +589,8 @@ const useReforestation = () => {
         version: '2.0',
         generator: 'ReForest.AI',
         usingFallbackLocation: state.usingFallbackLocation,
-        locationSource: state.gpsData?.source || 'unknown'
+        locationSource: state.gpsData?.source || 'unknown',
+        natureValidation: state.natureValidation
       },
       location: state.locationData,
       gps: state.gpsData,
@@ -631,7 +628,8 @@ const useReforestation = () => {
       useAI: state.useAI,
       openAIKey: state.openAIKey,
       needsManualLocation: false,
-      usingFallbackLocation: false
+      usingFallbackLocation: false,
+      natureValidation: null
     });
   }, [state.useAI, state.openAIKey]);
 
@@ -655,12 +653,13 @@ const useReforestation = () => {
     }
 
     let progress = 0;
+    if (state.natureValidation) progress += 10;
     if (state.gpsData) progress += 15;
     if (state.imagePreview) progress += 5;
     if (state.locationData) progress += 20;
     if (state.imageAnalysis) progress += 15;
     if (state.climateData) progress += 25;
-    if (state.recommendations) progress += 20;
+    if (state.recommendations) progress += 10;
     
     return Math.min(95, progress);
   }, [state]);

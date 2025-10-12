@@ -7,7 +7,6 @@ import {
   XCircle,
   MapPin,
   Camera,
-  Lightbulb,
 } from "lucide-react";
 
 import useReforestation from "./hooks/useReforestation";
@@ -94,109 +93,6 @@ const Alert = ({ type = "info", title, children, onClose, action }) => {
           </button>
         )}
       </div>
-    </div>
-  );
-};
-
-/**
- * Location Permission Prompt
- */
-const LocationPrompt = ({ onDismiss }) => {
-  const [dismissed, setDismissed] = useState(false);
-
-  const handleDismiss = () => {
-    setDismissed(true);
-    onDismiss?.();
-  };
-
-  if (dismissed) return null;
-
-  return (
-    <Alert
-      type="info"
-      title="📍 Enable Location Services"
-      onClose={handleDismiss}
-    >
-      <p className="mb-2">
-        For best results, please <strong>enable location/GPS</strong> on your
-        device before taking a photo.
-      </p>
-      <div className="bg-white rounded-lg p-3 mt-3 text-xs space-y-2">
-        <p className="font-semibold text-blue-800">How to enable:</p>
-        <ul className="list-disc ml-4 space-y-1 text-blue-700">
-          <li>
-            <strong>Android:</strong> Settings → Location → Turn On
-          </li>
-          <li>
-            <strong>iOS:</strong> Settings → Privacy → Location Services →
-            Camera → While Using
-          </li>
-        </ul>
-        <p className="text-blue-600 mt-2">
-          💡 This ensures accurate climate and location data for tree
-          recommendations.
-        </p>
-      </div>
-    </Alert>
-  );
-};
-
-/**
- * Photo Tips Component
- */
-const PhotoTips = () => {
-  const [showTips, setShowTips] = useState(false);
-
-  return (
-    <div className="max-w-2xl mx-auto mt-8">
-      <button
-        onClick={() => setShowTips(!showTips)}
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium mx-auto"
-      >
-        <Camera className="w-5 h-5" />
-        {showTips ? "Hide" : "Show"} Photo Tips
-      </button>
-
-      {showTips && (
-        <div className="mt-4 bg-gradient-to-br from-blue-50 to-green-50 rounded-xl p-6 border-2 border-blue-200">
-          <div className="flex items-center gap-2 mb-4">
-            <Lightbulb className="w-6 h-6 text-yellow-500" />
-            <h4 className="font-bold text-gray-800">Tips for Best Results</h4>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-lg p-4">
-              <h5 className="font-semibold text-green-700 mb-2">✅ DO</h5>
-              <ul className="text-sm text-gray-700 space-y-1">
-                <li>• Take photo in good daylight</li>
-                <li>• Focus on the ground/soil</li>
-                <li>• Include visible terrain</li>
-                <li>• Enable GPS before shooting</li>
-                <li>• Use original camera app</li>
-              </ul>
-            </div>
-
-            <div className="bg-white rounded-lg p-4">
-              <h5 className="font-semibold text-red-700 mb-2">❌ DON'T</h5>
-              <ul className="text-sm text-gray-700 space-y-1">
-                <li>• Point camera at sky</li>
-                <li>• Take photos in darkness</li>
-                <li>• Use heavily edited images</li>
-                <li>• Include mostly buildings</li>
-                <li>• Crop or filter photos</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-            <p className="text-sm text-yellow-800">
-              <strong>Best:</strong> Stand in the middle of your planting site
-              and take a photo showing the ground, with some horizon visible.
-              Make sure GPS is enabled!
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -294,21 +190,7 @@ function App() {
   } = useReforestation();
 
   const [showExportSuccess, setShowExportSuccess] = useState(false);
-  const [showLocationPrompt, setShowLocationPrompt] = useState(true);
   const [isDevelopment] = useState(process.env.NODE_ENV === "development");
-
-  // Check if we should show location prompt
-  useEffect(() => {
-    const hasSeenPrompt = sessionStorage.getItem("hasSeenLocationPrompt");
-    if (hasSeenPrompt) {
-      setShowLocationPrompt(false);
-    }
-  }, []);
-
-  const handleDismissLocationPrompt = () => {
-    sessionStorage.setItem("hasSeenLocationPrompt", "true");
-    setShowLocationPrompt(false);
-  };
 
   const handleExport = (format) => {
     setShowExportSuccess(true);
@@ -321,6 +203,55 @@ function App() {
   const getAlertConfig = () => {
     // Error alerts
     if (state.error) {
+      // Nature validation errors (PRIORITY CHECK - must be first)
+      if (
+        state.error.includes("people") ||
+        state.error.includes("portrait") ||
+        state.error.includes("graphic") ||
+        state.error.includes("screenshot") ||
+        state.error.includes("digital art") ||
+        state.error.includes("document") ||
+        state.error.includes("outdoor/land related") ||
+        state.error.includes("white/blank") ||
+        state.error.includes("too dark") ||
+        state.error.includes("Low confidence")
+      ) {
+        return {
+          type: "error",
+          title: "📸 Invalid Image Type",
+          message: (
+            <>
+              <p className="mb-2 font-medium">{state.error}</p>
+              <div className="bg-white rounded-lg p-3 mt-3 text-xs space-y-2">
+                <p className="font-semibold text-blue-800">What we need:</p>
+                <ul className="list-disc ml-4 space-y-1 text-gray-700">
+                  <li>Photos of <strong>outdoor land or landscape</strong></li>
+                  <li>Clear shots of <strong>soil, vegetation, or terrain</strong></li>
+                  <li>Images taken <strong>outside</strong> in natural light</li>
+                  <li>Photos showing <strong>earth tones</strong> (green, brown, gray)</li>
+                </ul>
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+                  <p className="text-yellow-800 font-medium">
+                    💡 Avoid: selfies, indoor photos, screenshots, graphics, or text documents
+                  </p>
+                </div>
+              </div>
+            </>
+          ),
+          action: (
+            <button
+              onClick={() => {
+                clearError();
+                resetWorkflow();
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+            >
+              📷 Upload Nature Photo
+            </button>
+          ),
+        };
+      }
+
       // No trees found
       if (
         state.error.includes("No suitable trees") ||
@@ -350,11 +281,11 @@ function App() {
               <button
                 onClick={() => {
                   clearError();
-                  setShowLocationPrompt(true);
+                  resetWorkflow();
                 }}
                 className="px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600 transition-colors"
               >
-                📍 Check GPS & Retry
+                📸 Take New Photo
               </button>
               <button
                 onClick={() => {
@@ -400,7 +331,6 @@ function App() {
             <button
               onClick={() => {
                 clearError();
-                setShowLocationPrompt(true);
                 resetWorkflow();
               }}
               className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
@@ -673,18 +603,11 @@ function App() {
                   </p>
                 </div>
 
-                {/* Location Prompt */}
-                {showLocationPrompt && (
-                  <div className="max-w-2xl mx-auto mb-8">
-                    <LocationPrompt onDismiss={handleDismissLocationPrompt} />
-                  </div>
-                )}
-
-                {/* Image Uploader */}
-                <ImageUploader onImageUpload={handleImageUpload} />
-
-                {/* Photo Tips */}
-                <PhotoTips />
+                {/* Image Uploader - handles all validation and tips */}
+                <ImageUploader 
+                  onImageUpload={handleImageUpload}
+                  isProcessing={state.isLoading}
+                />
 
                 {/* How It Works Section */}
                 <div className="max-w-4xl mx-auto mt-16">
@@ -938,6 +861,32 @@ function App() {
                         </span>
                       </p>
 
+                      {state.natureValidation && (
+                        <>
+                          <p className="text-yellow-400 font-bold mt-3 mb-1">
+                            == NATURE VALIDATION ==
+                          </p>
+                          <p>
+                            Is Nature:{" "}
+                            <span className="text-white">
+                              {state.natureValidation.isNatureRelated ? "✓ YES" : "✗ NO"}
+                            </span>
+                          </p>
+                          <p>
+                            Confidence:{" "}
+                            <span className="text-white">
+                              {state.natureValidation.confidence}%
+                            </span>
+                          </p>
+                          <p>
+                            Natural Colors:{" "}
+                            <span className="text-white">
+                              {state.natureValidation.details?.naturalColors}%
+                            </span>
+                          </p>
+                        </>
+                      )}
+
                       {state.error && (
                         <>
                           <p className="text-red-400 font-bold mt-3 mb-1">
@@ -984,6 +933,21 @@ function App() {
               </Alert>
             )}
 
+            {/* Nature validation confidence alert */}
+            {state.natureValidation && state.natureValidation.confidence < 75 && (
+              <Alert type="info" title="ℹ️ Image Quality Notice">
+                <p>
+                  Image confidence: <strong>{state.natureValidation.confidence}%</strong>. 
+                  {' '}For best results, take a clearer photo showing more vegetation or soil.
+                </p>
+                {state.natureValidation.suggestion && (
+                  <p className="mt-2 text-xs">
+                    💡 {state.natureValidation.suggestion}
+                  </p>
+                )}
+              </Alert>
+            )}
+
             {/* Success Message */}
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
               <div className="flex items-start justify-between flex-wrap gap-4">
@@ -1002,6 +966,11 @@ function App() {
                   {state.aiInsights && (
                     <p className="text-sm text-green-600 mt-2">
                       ✨ Enhanced with AI insights
+                    </p>
+                  )}
+                  {state.natureValidation && state.natureValidation.confidence >= 75 && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      🎯 Image confidence: {state.natureValidation.confidence}%
                     </p>
                   )}
                 </div>
