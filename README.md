@@ -435,7 +435,7 @@ in the Software without restriction...
 - **Website**: [https://reforestration-ai.vercel.app/](https://reforestration-ai.vercel.app/)
 - **GitHub**: [https://github.com/Gunther5kevo/reforestration-ai](https://github.com/Gunther5kevo/reforestration-ai)
 - **Issues**: [GitHub Issues](https://github.com/Gunther5kevo/reforestration-ai/issues)
-- **Email**: guntherkevo@example.com (replace with actual email)
+
 
 ---
 
